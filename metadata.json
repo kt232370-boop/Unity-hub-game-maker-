@@ -1,0 +1,8 @@
+{
+  "name": "Unity Hub",
+  "description": "Android Unity Hub workspace with a white centered-logo toolbar, project list, interactive tutorials, and embedded Unity Branding & Trademarks website access.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

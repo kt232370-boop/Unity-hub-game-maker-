@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Unity Hub</string>
+    <string name="cd_unity_hub_logo">Unity Hub logo</string>
+    <string name="tab_projects">Projects</string>
+    <string name="tab_tutorials">Tutorials</string>
+    <string name="tab_website">Website</string>
+    <string name="search_projects_hint">Search projects, versions, or templates</string>
+    <string name="search_tutorials_hint">Search Unity tutorials</string>
+    <string name="new_project">New Project</string>
+    <string name="open_in_browser">Open in browser</string>
+    <string name="branding_pt_label">PT Branding</string>
+    <string name="branding_en_label">EN Branding</string>
+    <string name="learn_site_label">Unity Learn</string>
+    <string name="cd_back">Navigate back</string>
+    <string name="cd_forward">Navigate forward</string>
+    <string name="cd_refresh">Reload page</string>
+    <string name="cd_add_project">Create new Unity project</string>
+    <string name="cd_favorite">Toggle favorite</string>
+    <string name="cd_delete_project">Remove project</string>
+</resources>
