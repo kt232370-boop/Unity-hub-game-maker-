@@ -31,32 +31,56 @@ import androidx.compose.material3.NavigationRailItem
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.credentials.CredentialManager
+import androidx.lifecycle.ViewModelProvider.AndroidViewModelFactory.Companion.APPLICATION_KEY
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.viewmodel.initializer
+import androidx.lifecycle.viewmodel.viewModelFactory
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.data.remote.UserProfileRepository
 import com.example.data.repository.UnityWebUrls
+import com.example.ui.auth.AuthFlowScreen
+import com.example.ui.auth.PendingUnityIdDraft
+import com.example.ui.auth.attemptAutoSignIn
+import com.example.ui.auth.authStateFlow
+import com.example.ui.auth.signOut
 import com.example.ui.components.CreateProjectDialog
 import com.example.ui.components.ProjectDetailSheet
+import com.example.ui.components.UnityAccountSheet
 import com.example.ui.components.UnityHubToolbar
 import com.example.ui.screens.ProjectsScreen
 import com.example.ui.screens.TutorialsScreen
 import com.example.ui.screens.WebsiteScreen
 import com.example.ui.theme.UnityHubTheme
+import com.example.ui.viewmodel.AccountViewModel
 import com.example.ui.viewmodel.HubTab
 import com.example.ui.viewmodel.HubUiState
+import com.example.ui.viewmodel.ProfileUiState
 import com.example.ui.viewmodel.UnityHubViewModel
+import com.google.firebase.Firebase
+import com.google.firebase.auth.FirebaseUser
+import com.google.firebase.auth.auth
+import com.google.firebase.firestore.FirebaseFirestore
 
 const val ROUTE_PROJECTS = "projects"
 const val ROUTE_TUTORIALS = "tutorials"
@@ -68,7 +92,7 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             UnityHubTheme {
-                UnityHubApp()
+                AppNavigation()
             }
         }
     }
@@ -111,10 +135,85 @@ private val hubNavItems = listOf(
 )
 
 @Composable
+fun AppNavigation() {
+    val auth = remember { Firebase.auth }
+    val currentUser by auth.authStateFlow().collectAsStateWithLifecycle(initialValue = auth.currentUser)
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+
+    var pendingDraft by remember { mutableStateOf<PendingUnityIdDraft?>(null) }
+    var checkedAutoSignIn by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        if (!checkedAutoSignIn) {
+            checkedAutoSignIn = true
+            attemptAutoSignIn(
+                context = context,
+                credentialManager = credentialManager,
+                onAuthSuccess = {},
+                onUnauthenticated = {},
+                scope = scope
+            )
+        }
+    }
+
+    val user = currentUser
+    if (user == null) {
+        AuthFlowScreen(
+            onGoogleAuthComplete = { draft ->
+                pendingDraft = draft
+            }
+        )
+    } else {
+        key(user.uid) {
+            UnityHubApp(
+                currentUser = user,
+                pendingDraft = pendingDraft,
+                onConsumeDraft = { pendingDraft = null }
+            )
+        }
+    }
+}
+
+@Composable
 fun UnityHubApp(
-    viewModel: UnityHubViewModel = viewModel()
+    currentUser: FirebaseUser,
+    pendingDraft: PendingUnityIdDraft?,
+    onConsumeDraft: () -> Unit,
+    viewModel: UnityHubViewModel = viewModel(key = currentUser.uid)
 ) {
+    val currentUserId = currentUser.uid
+    val accountViewModel: AccountViewModel = viewModel(
+        key = currentUserId,
+        factory = viewModelFactory {
+            initializer {
+                val app = checkNotNull(this[APPLICATION_KEY]) {
+                    "APPLICATION_KEY missing from CreationExtras"
+                }
+                val databaseId = app.getString(R.string.firestore_database_id)
+                val db = FirebaseFirestore.getInstance(databaseId)
+                AccountViewModel(UserProfileRepository(db), currentUserId)
+            }
+        }
+    )
+
+    LaunchedEffect(currentUserId, pendingDraft) {
+        accountViewModel.syncSignedInProfile(pendingDraft)
+        if (pendingDraft != null) {
+            onConsumeDraft()
+        }
+    }
+
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val profileState by accountViewModel.profileState.collectAsStateWithLifecycle()
+    val syncError by accountViewModel.syncError.collectAsStateWithLifecycle()
+
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val credentialManager = remember(context) { CredentialManager.create(context) }
+    var isAccountSheetOpen by remember { mutableStateOf(false) }
+
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route ?: ROUTE_PROJECTS
@@ -156,7 +255,8 @@ fun UnityHubApp(
                     showBackButton = showTutorialBackButton,
                     onBackClick = { viewModel.closeTutorialDetail() },
                     onQuickAddProjectClick = { viewModel.setCreateProjectDialogOpen(true) },
-                    onQuickWebsiteClick = { openWebsite(UnityWebUrls.BRANDING_PT) }
+                    onQuickWebsiteClick = { openWebsite(UnityWebUrls.BRANDING_PT) },
+                    onAccountClick = { isAccountSheetOpen = true }
                 )
             },
             bottomBar = {
@@ -310,6 +410,25 @@ fun UnityHubApp(
                 }
             }
         }
+    }
+
+    if (isAccountSheetOpen) {
+        val loadedProfile = (profileState as? ProfileUiState.Ready)?.profile
+        val profileError = (profileState as? ProfileUiState.Error)?.message ?: syncError
+        UnityAccountSheet(
+            profile = loadedProfile,
+            fallbackEmail = currentUser.email,
+            fallbackName = currentUser.displayName,
+            syncError = profileError,
+            onDismiss = {
+                accountViewModel.clearSyncError()
+                isAccountSheetOpen = false
+            },
+            onSignOutClick = {
+                isAccountSheetOpen = false
+                signOut(credentialManager = credentialManager, scope = scope)
+            }
+        )
     }
 }
 

@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Authenticated Unity Hub account profile synced with Google Sign-In.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "Firebase Auth UID of the account owner."
+        },
+        "email": {
+          "type": "string",
+          "description": "Primary email address associated with the Unity ID."
+        },
+        "username": {
+          "type": "string",
+          "description": "Public Unity Hub username."
+        },
+        "fullName": {
+          "type": "string",
+          "description": "Full display name of the Unity developer."
+        },
+        "emailVerified": {
+          "type": "boolean",
+          "description": "Whether the 6-digit email verification code or Google email check completed."
+        },
+        "authProvider": {
+          "type": "string",
+          "enum": ["google"],
+          "description": "Provisioned authentication provider."
+        },
+        "photoUrl": {
+          "type": "string",
+          "description": "Optional profile avatar URL from Google account."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was created (FieldValue.serverTimestamp())."
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server timestamp when the profile was last updated (FieldValue.serverTimestamp())."
+        }
+      },
+      "required": ["userId", "email", "username", "fullName", "emailVerified", "authProvider", "createdAt", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private Unity ID profile document scoped strictly to the owning Firebase user."
+    }
+  }
+}
